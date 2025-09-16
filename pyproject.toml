@@ -1,0 +1,11 @@
+[project]
+name = "gnb-mcpserver"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.12.2",
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.13.1",
+]

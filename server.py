@@ -1,0 +1,311 @@
+from typing import Any
+import httpx
+from fastmcp import FastMCP, Context
+import re
+import os
+import json
+import logging
+from pathlib import Path
+# Initialize FastMCP server
+mcp = FastMCP("gNB Agent")
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Set specific loggers to DEBUG level
+logging.getLogger('mcp').setLevel(logging.DEBUG)
+logging.getLogger('fastmcp').setLevel(logging.DEBUG)
+
+logger = logging.getLogger("mcp_server")
+logger.setLevel(logging.DEBUG)
+
+# Determine project and configuration directories
+PROJECT_ROOT = Path().resolve()
+CONF_DIR = Path(
+    os.environ.get(
+        'OAI_CONF_DIR',
+        str(PROJECT_ROOT / "deps/openairinterface5g/ci-scripts/conf_files")
+    )
+)
+
+logger.info(f"Using configuration directory: {CONF_DIR}")
+
+@mcp.tool()
+async def update_gnb_bandwidth(
+    bandwidth: str,
+    ctx: Context = None
+) -> str:
+    """
+    Updates bandwidth-related parameters in the gNB .conf configuration file for Band 78.
+    
+    This tool configures the gNB bandwidth to either 20MHz or 40MHz and automatically
+    sets the appropriate carrier bandwidth and BWP parameters according to 3GPP standards.
+    You should restart the gNB to apply changes.
+    
+    Args:
+        bandwidth: Bandwidth configuration ("20MHz" or "40MHz")
+        
+    Returns:
+        Confirmation message with updated parameters
+    """
+    # Define bandwidth configurations for Band 78
+    bandwidth_configs = {
+        "20MHz": {
+            "dl_carrierBandwidth": 51,
+            "initialDLBWPlocationAndBandwidth": 13750,
+            "ul_carrierBandwidth": 51,
+            "initialULBWPlocationAndBandwidth": 13750
+        },
+        "40MHz": {
+            "dl_carrierBandwidth": 106,
+            "initialDLBWPlocationAndBandwidth": 28875,
+            "ul_carrierBandwidth": 106,
+            "initialULBWPlocationAndBandwidth": 28875
+        }
+    }
+    
+    # Validate bandwidth parameter
+    if bandwidth not in bandwidth_configs:
+        raise ValueError(f"Invalid bandwidth '{bandwidth}'. Must be '20MHz' or '40MHz'")
+    
+    # Use environment variable for config file path, with fallback
+    config_file_name = os.environ.get('GNB_CONFIG_FILE', 'gnb.sa.band78.51prb.usrpb200.conf')
+    
+    # If it's just a filename, combine with CONF_DIR
+    if '/' not in config_file_name:
+        config_file_path = CONF_DIR / config_file_name
+    else:
+        config_file_path = Path(config_file_name)
+    
+    # Check if config file exists
+    if not config_file_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_file_path}")
+    
+    # Read the current configuration
+    try:
+        content = config_file_path.read_text()
+    except Exception as e:
+        raise IOError(f"Failed to read configuration file: {str(e)}")
+    
+    # Get the bandwidth configuration
+    config = bandwidth_configs[bandwidth]
+    
+    # Track changes made
+    changes_made = []
+    
+    # Parameters to update (bandwidth-specific only)
+    parameters = [
+        ("dl_carrierBandwidth", config["dl_carrierBandwidth"]),
+        ("ul_carrierBandwidth", config["ul_carrierBandwidth"]),
+        ("initialDLBWPlocationAndBandwidth", config["initialDLBWPlocationAndBandwidth"]),
+        ("initialULBWPlocationAndBandwidth", config["initialULBWPlocationAndBandwidth"])
+    ]
+    
+    for param_name, param_value in parameters:
+        # Capture current value for logging (conf format uses = instead of :)
+        current_match = re.search(rf"{param_name}\s*=\s*(-?\d+(?:\.\d+)?)", content)
+        current_value = current_match.group(1) if current_match else "not found"
+        
+        # Replace parameter value using regex for .conf format
+        # Pattern matches: parameter_name = value; (with optional whitespace and semicolon)
+        pattern = rf"({param_name}\s*=\s*)-?\d+(?:\.\d+)?"
+        replacement = rf"\g<1>{param_value}"
+        
+        new_content, count = re.subn(pattern, replacement, content)
+        
+        if count > 0:
+            content = new_content
+            changes_made.append(f"{param_name}: {current_value} → {param_value}")
+            if ctx:
+                await ctx.info(f"Updated {param_name} from {current_value} to {param_value}")
+        else:
+            if ctx:
+                await ctx.warning(f"Parameter {param_name} not found in config file")
+    
+    if not changes_made:
+        return "No parameters were updated. Configuration file may not contain expected parameters."
+    
+    # Write updated content back to file
+    try:
+        config_file_path.write_text(content)
+    except Exception as e:
+        raise IOError(f"Failed to write updated configuration: {str(e)}")
+    
+    changes_summary = "; ".join(changes_made)
+    if ctx:
+        await ctx.info(f"Updated gNB configuration for {bandwidth} bandwidth: {changes_summary}")
+    
+    return f"Successfully configured gNB for {bandwidth} bandwidth in {config_file_path.name}:\n" + "\n".join(changes_made) + f"\n\nRestart the gNB to apply these changes to the network."
+
+@mcp.tool()
+async def get_gnb_config(ctx: Context = None) -> str:
+    """
+    Retrieves the current gNB configuration by running the get_gnb_config.sh script.
+    
+    This tool executes the shell script that parses the local gNB configuration file
+    and returns detailed configuration information in JSON format including:
+    - gNB identity (ID, name, tracking area)
+    - PLMN configuration (MCC, MNC)
+    - RF configuration (band, frequencies, bandwidth)
+    - Power settings (SSB, PDSCH, max UE power)
+    - SSB and PRACH configuration
+    - Antenna configuration
+    
+    Returns:
+        JSON string containing the complete gNB configuration
+    """
+    import subprocess
+    
+    # Use environment variable for script path, with fallback
+    script_name = os.environ.get('GNB_CONFIG_SCRIPT', 'get_gnb_config.sh')
+    scripts_dir = PROJECT_ROOT / "scripts"
+    script_path = scripts_dir / script_name
+    
+    try:
+        # Check if script exists
+        if not script_path.exists():
+            return f'{{"error": "Configuration script not found at {script_path}"}}'
+        
+        # Make sure script is executable
+        script_path.chmod(0o755)
+        
+        # Run the script and capture output
+        result = subprocess.run(
+            [str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=30  # 30 second timeout
+        )
+        
+        if result.returncode == 0:
+            # Script executed successfully, return the JSON output
+            if ctx:
+                await ctx.info(f"Successfully retrieved gNB configuration from {script_path}")
+            return result.stdout.strip()
+        else:
+            # Script failed, return error information
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            return f'{{"error": "Script execution failed with return code {result.returncode}", "stderr": "{error_msg}"}}'
+            
+    except subprocess.TimeoutExpired:
+        return '{"error": "Script execution timed out after 30 seconds"}'
+    except subprocess.CalledProcessError as e:
+        return f'{{"error": "Script execution failed", "return_code": {e.returncode}, "stderr": "{e.stderr}"}}'
+    except Exception as e:
+        return f'{{"error": "Unexpected error running configuration script", "details": "{str(e)}"}}'
+
+@mcp.tool()
+async def get_gnb_logs(
+    lines: int = 100,
+    ctx: Context = None
+) -> str:
+    """
+    Retrieves the latest gNB log file content.
+    
+    This tool finds and reads from the most recent gNB log file in the cmake_targets/ran_build/build directory.
+    Log files follow the pattern: gnb_YYYY-MM-DD_HHMMSS.log
+    
+    Args:
+        lines: Number of lines to read from the end of the log file (default: 100, max: 1000)
+        
+    Returns:
+        Content from the latest gNB log file
+    """
+    import glob
+    from datetime import datetime
+    
+    # Validate lines parameter
+    if lines < 1:
+        lines = 100
+    elif lines > 1000:
+        lines = 1000
+    
+    # Use environment variable for log directory with fallback
+    log_base_dir = os.environ.get(
+        'GNB_LOG_DIR', 
+        '/home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/cmake_targets/ran_build/build'
+    )
+    
+    log_dir = Path(log_base_dir)
+    
+    try:
+        # Check if log directory exists
+        if not log_dir.exists():
+            return f'{{"error": "Log directory not found: {log_dir}"}}'
+        
+        # Find all gNB log files matching the pattern
+        log_pattern = str(log_dir / "gnb_*.log")
+        log_files = glob.glob(log_pattern)
+        
+        if not log_files:
+            return f'{{"error": "No gNB log files found in {log_dir}"}}'
+        
+        # Sort by modification time to get the latest file
+        latest_log = max(log_files, key=os.path.getmtime)
+        latest_log_path = Path(latest_log)
+        
+        # Get file info
+        file_size = latest_log_path.stat().st_size
+        mod_time = datetime.fromtimestamp(latest_log_path.stat().st_mtime)
+        
+        if ctx:
+            await ctx.info(f"Reading latest gNB log: {latest_log_path.name} (size: {file_size} bytes, modified: {mod_time})")
+        
+        # Read the last N lines from the file
+        try:
+            with open(latest_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                # For large files, read from the end
+                if file_size > 1024 * 1024:  # 1MB
+                    # Seek to near the end and read backwards
+                    f.seek(max(0, file_size - 50000))  # Read last ~50KB
+                    content_lines = f.readlines()
+                else:
+                    content_lines = f.readlines()
+                
+                # Get the last N lines
+                last_lines = content_lines[-lines:] if len(content_lines) > lines else content_lines
+                content = ''.join(last_lines)
+        
+        except UnicodeDecodeError:
+            # Try with different encoding if UTF-8 fails
+            with open(latest_log_path, 'r', encoding='latin-1', errors='ignore') as f:
+                if file_size > 1024 * 1024:
+                    f.seek(max(0, file_size - 50000))
+                    content_lines = f.readlines()
+                else:
+                    content_lines = f.readlines()
+                
+                last_lines = content_lines[-lines:] if len(content_lines) > lines else content_lines
+                content = ''.join(last_lines)
+        
+        # Build response with metadata
+        response = {
+            "timestamp": datetime.now().isoformat(),
+            "log_file": {
+                "path": str(latest_log_path),
+                "name": latest_log_path.name,
+                "size_bytes": file_size,
+                "modified": mod_time.isoformat(),
+                "lines_requested": lines,
+                "lines_returned": len(last_lines)
+            },
+            "content": content.strip()
+        }
+        
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error reading gNB log file: {str(e)}"
+        if ctx:
+            await ctx.error(error_msg)
+        return f'{{"error": "{error_msg}"}}'
+
+if __name__ == "__main__":
+    # Initialize and run the server
+    mcp.run(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port=8000,
+        path="/mcp",
+    )
