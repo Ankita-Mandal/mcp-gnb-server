@@ -6,6 +6,8 @@ import os
 import json
 import logging
 from pathlib import Path
+import subprocess
+import asyncio
 # Initialize FastMCP server
 mcp = FastMCP("gNB Agent")
 
@@ -28,8 +30,8 @@ CONF_DIR = Path(
         str(PROJECT_ROOT / "deps/openairinterface5g/ci-scripts/conf_files")
     )
 )
-
 logger.info(f"Using configuration directory: {CONF_DIR}")
+
 
 @mcp.tool()
 async def update_gnb_bandwidth(
@@ -39,35 +41,35 @@ async def update_gnb_bandwidth(
     """
     Updates bandwidth-related parameters in the gNB .conf configuration file for Band 78.
     
-    This tool configures the gNB bandwidth to either 20MHz or 40MHz and automatically
+    This tool configures the gNB bandwidth to either 10MHz or 20MHz and automatically
     sets the appropriate carrier bandwidth and BWP parameters according to 3GPP standards.
     You should restart the gNB to apply changes.
     
     Args:
-        bandwidth: Bandwidth configuration ("20MHz" or "40MHz")
+        bandwidth: Bandwidth configuration ("10MHz" or "20MHz")
         
     Returns:
         Confirmation message with updated parameters
     """
     # Define bandwidth configurations for Band 78
     bandwidth_configs = {
+        "10MHz": {
+            "dl_carrierBandwidth": 24,
+            "initialDLBWPlocationAndBandwidth": 6325,
+            "ul_carrierBandwidth": 24,
+            "initialULBWPlocationAndBandwidth": 6325
+        },
         "20MHz": {
             "dl_carrierBandwidth": 51,
             "initialDLBWPlocationAndBandwidth": 13750,
             "ul_carrierBandwidth": 51,
             "initialULBWPlocationAndBandwidth": 13750
-        },
-        "40MHz": {
-            "dl_carrierBandwidth": 106,
-            "initialDLBWPlocationAndBandwidth": 28875,
-            "ul_carrierBandwidth": 106,
-            "initialULBWPlocationAndBandwidth": 28875
         }
     }
     
     # Validate bandwidth parameter
     if bandwidth not in bandwidth_configs:
-        raise ValueError(f"Invalid bandwidth '{bandwidth}'. Must be '20MHz' or '40MHz'")
+        raise ValueError(f"Invalid bandwidth '{bandwidth}'. Must be '10MHz' or '20MHz'")
     
     # Use environment variable for config file path, with fallback
     config_file_name = os.environ.get('GNB_CONFIG_FILE', 'gnb.sa.band78.51prb.usrpb200.conf')
@@ -300,6 +302,174 @@ async def get_gnb_logs(
         if ctx:
             await ctx.error(error_msg)
         return f'{{"error": "{error_msg}"}}'
+
+@mcp.tool()
+async def restart_gnb(ctx: Context = None) -> str:
+    """
+    Restarts the gNB in the connected usrp.
+    
+    This tool executes a script that stops any existing gNB processes and starts a new one
+    with the current configuration. The gNB will be started in the background with logging.
+    
+    Note: This requires sudo access. Ensure the script has appropriate sudo permissions configured.
+
+    Returns:
+        Status message indicating whether the restart was successful
+    """
+    script_path = Path(__file__).parent / "scripts" / "restart_gnb.sh"
+    
+    if not script_path.exists():
+        error_msg = f"Restart script not found: {script_path}"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error: {error_msg}"
+    
+    # # Make sure the script is executable
+    # script_path.chmod(0o755)
+    
+    try:
+        # Execute the restart script with sudo
+        if ctx:
+            await ctx.info("Starting gNB restart process...")
+        
+        process = await asyncio.create_subprocess_exec(
+            str(script_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            output = stdout.decode().strip()
+            if ctx:
+                await ctx.info(f"gNB restart successful")
+            
+            # Extract the success message from the script output
+            lines = output.split('\n')
+            success_line = next((line for line in lines if "gNB restarted successfully" in line), "")
+            
+            if success_line:
+                return success_line
+            else:
+                return "gNB restarted successfully"
+        else:
+            error = stderr.decode().strip() if stderr else stdout.decode().strip()
+            if ctx:
+                await ctx.warning(f"gNB restart failed: {error}")
+            
+            if process.returncode == 130:
+                return "gNB restart was interrupted"
+            elif "sudo" in error.lower() and "password" in error.lower():
+                return "Error: sudo password required. Please configure passwordless sudo for the gNB executable or run the MCP server with appropriate privileges."
+            else:
+                return f"Failed to restart gNB: {error}"
+                
+    except Exception as e:
+        error_msg = f"Error executing restart script: {str(e)}"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error restarting gNB: {error_msg}"
+
+@mcp.tool()
+async def update_gnb_mcs(
+    dl_mcs: int,
+    ul_mcs: int,
+    ctx: Context = None
+) -> str:
+    """
+    Updates MCS (Modulation and Coding Scheme) parameters in the gNB configuration file.
+
+    This tool configures the downlink and uplink MCS parameters which control
+    the modulation and coding schemes used by the gNB. Valid MCS values are 0-28.
+    You should restart the gNB to apply changes.
+
+    Args:
+        dl_mcs: Downlink MCS value (0-28) used for both min and max MCS
+        ul_mcs: Uplink MCS value (0-28) used for both min and max MCS
+
+    Returns:
+        Confirmation message with updated parameters or guidance
+    """
+    # Validate MCS parameter ranges
+    if not (0 <= dl_mcs <= 28):
+        error_msg = f"Invalid dl_mcs value '{dl_mcs}'. Must be between 0 and 28"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error: {error_msg}"
+    
+    if not (0 <= ul_mcs <= 28):
+        error_msg = f"Invalid ul_mcs value '{ul_mcs}'. Must be between 0 and 28"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error: {error_msg}"
+
+    # Use environment variables for configuration paths
+    conf_dir = os.environ.get('OAI_CONF_DIR', '/app/oai-files')
+    config_file = os.environ.get('GNB_CONFIG_FILE', 'gnb.sa.band78.51prb.usrpb200.conf')
+    
+    target_file = Path(conf_dir) / config_file
+    
+    if not target_file.exists():
+        error_msg = f"Configuration file not found: {target_file}"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error: {error_msg}"
+
+    try:
+        # Read current configuration
+        content = target_file.read_text()
+        
+        if ctx:
+            await ctx.info(f"Updating MCS parameters in {target_file.name}")
+
+        # Track changes made
+        changes_made = []
+
+        # Parameters to update (using the same value for min and max)
+        parameters = [
+            ("dl_min_mcs", dl_mcs),
+            ("dl_max_mcs", dl_mcs),
+            ("ul_min_mcs", ul_mcs),
+            ("ul_max_mcs", ul_mcs)
+        ]
+
+        for param_name, param_value in parameters:
+            # Capture current value for logging
+            current_match = re.search(rf"{param_name}\s*=\s*(\d+)", content)
+            current_value = current_match.group(1) if current_match else "not found"
+
+            # Replace parameter value using regex
+            new_content, count = re.subn(
+                rf"({param_name}\s*=\s*)\d+", 
+                rf"\g<1>{param_value}", 
+                content
+            )
+
+            if count > 0:
+                content = new_content
+                changes_made.append(f"{param_name}: {current_value} → {param_value}")
+            else:
+                if ctx:
+                    await ctx.warning(f"Parameter {param_name} not found in config file")
+
+        if not changes_made:
+            return "No MCS parameters were updated. Configuration file may not contain expected MCS parameters."
+
+        # Write updated content back to file
+        target_file.write_text(content)
+
+        changes_summary = "; ".join(changes_made)
+        if ctx:
+            await ctx.info(f"Updated {target_file.name} MCS parameters: {changes_summary}")
+
+        return f"Successfully updated MCS parameters in {target_file.name}:\n{chr(10).join(changes_made)}\n\nRestart the gNB using restart_gnb tool to apply changes."
+
+    except Exception as e:
+        error_msg = f"Error updating MCS parameters: {str(e)}"
+        if ctx:
+            await ctx.error(error_msg)
+        return f"Error: {error_msg}"
 
 if __name__ == "__main__":
     # Initialize and run the server

@@ -8,17 +8,29 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    privileged: true
     environment:
+      # MCP Server Configuration
       - PORT=8000
       - SERVER_TYPE=gnb
+      - PROJECT_ROOT=/app
+      
+      # File and Directory Paths
       - ACTION_LOG_DIR=/app/logs
       - OAI_CONF_DIR=/app/oai-files
       - OAI_DOCUMENTATION_DIR=/app/oai-docs
-      - OAI_YAML_DIR=/app/oai-yaml
+      - GNB_LOG_DIR=/app/gnb-logs
+      
+      # Configuration Files
       - GNB_CONFIG_FILE=gnb.sa.band78.51prb.usrpb200.conf
       - GNB_CONFIG_SCRIPT=get_gnb_config.sh
-      - GNB_LOG_DIR=/app/gnb-logs
-      - PROJECT_ROOT=/app
+      
+      # gNB Runtime Configuration (used by restart_gnb.sh)
+      - GNB_BUILD_DIR=/app/gnb-logs
+      - GNB_EXECUTABLE=./nr-softmodem
+      - GAIN_VALUE=3
+      - USRP_TX_THREAD_CONFIG=1
+      - RESTART_TIMEOUT=30
     volumes:
       # Mount the server.py file directly
       - ./server.py:/app/server.py
@@ -26,12 +38,13 @@ services:
       - ./scripts:/app/scripts
       # Mount logs directory for persistent action logs visible in codebase
       - ./logs:/app/logs
+      # Mount the execute_on_host.sh script
+      - ./scripts/execute_on_host.sh:/app/execute_on_host.sh
       # Mount the gNB log directory
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/cmake_targets/ran_build/build:/app/gnb-logs
       # Mount the actual OAI files from the workspace path
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/ci-scripts/conf_files:/app/oai-files
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/doc:/app/oai-docs
-      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/ci-scripts/yaml_files/5g_rfsimulator:/app/oai-yaml
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["python", "server.py"]
     restart: unless-stopped

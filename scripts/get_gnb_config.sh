@@ -43,13 +43,13 @@ extract_gnb_config() {
     
     # Extract PLMN information
     local mcc=$(extract_param "mcc" "$config")
-    local mnc=$(extract_param "mnc" "$config")
-    local mnc_length=$(extract_param "mnc_length" "$config")
+    # local mnc=$(extract_param "mnc" "$config")
+    # local mnc_length=$(extract_param "mnc_length" "$config")
     
     # Extract RF configuration
     local band=$(extract_param "dl_frequencyBand" "$config")
     local point_a_frequency=$(extract_param "dl_absoluteFrequencyPointA" "$config")
-    local ssb_frequency=$(extract_param "dl_absoluteFrequencySSB" "$config")
+    local ssb_frequency=$(extract_param "absoluteFrequencySSB" "$config")
     local dl_bandwidth_prbs=$(extract_param "dl_carrierBandwidth" "$config")
     local ul_bandwidth_prbs=$(extract_param "ul_carrierBandwidth" "$config")
     local dl_bwp_location=$(extract_param "initialDLBWPlocationAndBandwidth" "$config")
@@ -78,7 +78,7 @@ extract_gnb_config() {
     
     # Extract power settings
     local ssb_power=$(extract_param "ssPBCH_BlockPower" "$config")
-    local pdsch_power=$(extract_param "referenceSignalPower" "$config")
+    local pdsch_power=$(extract_param "max_pdschReferenceSignalPower" "$config")
     local p_max=$(extract_param "pMax" "$config")
     
     # Extract SSB configuration
@@ -97,15 +97,21 @@ extract_gnb_config() {
     local prach_config_index=$(extract_param "prach_ConfigurationIndex" "$config")
     local prach_msg1_fdm=$(extract_param "prach_msg1_FDM" "$config")
     local prach_freq_start=$(extract_param "prach_msg1_FrequencyStart" "$config")
-    local zero_correlation_zone=$(extract_param "zeroCorrelationZoneConfig" "$config")
-    local preamble_received_power=$(extract_param "preambleReceivedTargetPower" "$config")
-    local preamble_trans_max=$(extract_param "preambleTransMax" "$config")
-    local power_ramping_step=$(extract_param "powerRampingStep" "$config")
-    local ra_response_window=$(extract_param "ra_ResponseWindow" "$config")
+    # local zero_correlation_zone=$(extract_param "zeroCorrelationZoneConfig" "$config")
+    # local preamble_received_power=$(extract_param "preambleReceivedTargetPower" "$config")
+    # local preamble_trans_max=$(extract_param "preambleTransMax" "$config")
+    # local power_ramping_step=$(extract_param "powerRampingStep" "$config")
+    # local ra_response_window=$(extract_param "ra_ResponseWindow" "$config")
     
     # Extract MIMO configuration (if available)
-    local pdsch_ant_ports=$(extract_param "pdsch_AntennaPorts" "$config")
-    local pusch_ant_ports=$(extract_param "pusch_AntennaPorts" "$config")
+    # local pdsch_ant_ports=$(extract_param "pdsch_AntennaPorts" "$config")
+    # local pusch_ant_ports=$(extract_param "pusch_AntennaPorts" "$config")
+    
+    # Extract MCS configuration
+    local dl_min_mcs=$(extract_param "dl_min_mcs" "$config")
+    local dl_max_mcs=$(extract_param "dl_max_mcs" "$config")
+    local ul_min_mcs=$(extract_param "ul_min_mcs" "$config")
+    local ul_max_mcs=$(extract_param "ul_max_mcs" "$config")
     
     # Calculate bandwidth in MHz from PRBs (approximate)
     local dl_bandwidth_mhz="unknown"
@@ -139,14 +145,12 @@ extract_gnb_config() {
         "tracking_area_code": "$tracking_area_code"
     },
     "plmn_configuration": {
-        "mcc": "$mcc",
-        "mnc": "$mnc",
-        "mnc_length": "$mnc_length"
+        "mcc": "$mcc"
     },
     "rf_configuration": {
         "band": "$band",
         "dl_point_a_frequency": "$point_a_frequency",
-        "dl_ssb_frequency": "$ssb_frequency",
+        "absolute_frequency_ssb": "$ssb_frequency",
         "dl_bandwidth_prbs": "$dl_bandwidth_prbs",
         "ul_bandwidth_prbs": "$ul_bandwidth_prbs",
         "dl_bandwidth_mhz": "$dl_bandwidth_mhz",
@@ -170,17 +174,13 @@ extract_gnb_config() {
     "prach_configuration": {
         "configuration_index": "$prach_config_index",
         "msg1_fdm": "$prach_msg1_fdm",
-        "frequency_start": "$prach_freq_start",
-        "zero_correlation_zone": "$zero_correlation_zone",
-        "preamble_received_target_power": "$preamble_received_power",
-        "preamble_trans_max": "$preamble_trans_max",
-        "power_ramping_step": "$power_ramping_step",
-        "ra_response_window": "$ra_response_window"
+        "frequency_start": "$prach_freq_start"
     },
-    "antenna_configuration": {
-        "pdsch_antenna_ports": "$pdsch_ant_ports",
-        "pusch_antenna_ports": "$pusch_ant_ports",
-        "description": "Antenna port configuration for MIMO support"
+    "mcs_configuration": {
+        "dl_min_mcs": "$dl_min_mcs",
+        "dl_max_mcs": "$dl_max_mcs",
+        "ul_min_mcs": "$ul_min_mcs",
+        "ul_max_mcs": "$ul_max_mcs"
     }
 }
 EOF
