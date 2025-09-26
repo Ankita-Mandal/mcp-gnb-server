@@ -303,73 +303,73 @@ async def get_gnb_logs(
             await ctx.error(error_msg)
         return f'{{"error": "{error_msg}"}}'
 
-@mcp.tool()
-async def restart_gnb(ctx: Context = None) -> str:
-    """
-    Restarts the gNB in the connected usrp.
+# @mcp.tool()
+# async def restart_gnb(ctx: Context = None) -> str:
+#     """
+#     Restarts the gNB in the connected usrp.
     
-    This tool executes a script that stops any existing gNB processes and starts a new one
-    with the current configuration. The gNB will be started in the background with logging.
+#     This tool executes a script that stops any existing gNB processes and starts a new one
+#     with the current configuration. The gNB will be started in the background with logging.
     
-    Note: This requires sudo access. Ensure the script has appropriate sudo permissions configured.
+#     Note: This requires sudo access. Ensure the script has appropriate sudo permissions configured.
 
-    Returns:
-        Status message indicating whether the restart was successful
-    """
-    script_path = Path(__file__).parent / "scripts" / "restart_gnb.sh"
+#     Returns:
+#         Status message indicating whether the restart was successful
+#     """
+#     script_path = Path(__file__).parent / "scripts" / "restart_gnb.sh"
     
-    if not script_path.exists():
-        error_msg = f"Restart script not found: {script_path}"
-        if ctx:
-            await ctx.error(error_msg)
-        return f"Error: {error_msg}"
+#     if not script_path.exists():
+#         error_msg = f"Restart script not found: {script_path}"
+#         if ctx:
+#             await ctx.error(error_msg)
+#         return f"Error: {error_msg}"
     
-    # # Make sure the script is executable
-    # script_path.chmod(0o755)
+#     # # Make sure the script is executable
+#     # script_path.chmod(0o755)
     
-    try:
-        # Execute the restart script with sudo
-        if ctx:
-            await ctx.info("Starting gNB restart process...")
+#     try:
+#         # Execute the restart script with sudo
+#         if ctx:
+#             await ctx.info("Starting gNB restart process...")
         
-        process = await asyncio.create_subprocess_exec(
-            str(script_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+#         process = await asyncio.create_subprocess_exec(
+#             str(script_path),
+#             stdout=asyncio.subprocess.PIPE,
+#             stderr=asyncio.subprocess.PIPE
+#         )
         
-        stdout, stderr = await process.communicate()
+#         stdout, stderr = await process.communicate()
         
-        if process.returncode == 0:
-            output = stdout.decode().strip()
-            if ctx:
-                await ctx.info(f"gNB restart successful")
+#         if process.returncode == 0:
+#             output = stdout.decode().strip()
+#             if ctx:
+#                 await ctx.info(f"gNB restart successful")
             
-            # Extract the success message from the script output
-            lines = output.split('\n')
-            success_line = next((line for line in lines if "gNB restarted successfully" in line), "")
+#             # Extract the success message from the script output
+#             lines = output.split('\n')
+#             success_line = next((line for line in lines if "gNB restarted successfully" in line), "")
             
-            if success_line:
-                return success_line
-            else:
-                return "gNB restarted successfully"
-        else:
-            error = stderr.decode().strip() if stderr else stdout.decode().strip()
-            if ctx:
-                await ctx.warning(f"gNB restart failed: {error}")
+#             if success_line:
+#                 return success_line
+#             else:
+#                 return "gNB restarted successfully"
+#         else:
+#             error = stderr.decode().strip() if stderr else stdout.decode().strip()
+#             if ctx:
+#                 await ctx.warning(f"gNB restart failed: {error}")
             
-            if process.returncode == 130:
-                return "gNB restart was interrupted"
-            elif "sudo" in error.lower() and "password" in error.lower():
-                return "Error: sudo password required. Please configure passwordless sudo for the gNB executable or run the MCP server with appropriate privileges."
-            else:
-                return f"Failed to restart gNB: {error}"
+#             if process.returncode == 130:
+#                 return "gNB restart was interrupted"
+#             elif "sudo" in error.lower() and "password" in error.lower():
+#                 return "Error: sudo password required. Please configure passwordless sudo for the gNB executable or run the MCP server with appropriate privileges."
+#             else:
+#                 return f"Failed to restart gNB: {error}"
                 
-    except Exception as e:
-        error_msg = f"Error executing restart script: {str(e)}"
-        if ctx:
-            await ctx.error(error_msg)
-        return f"Error restarting gNB: {error_msg}"
+#     except Exception as e:
+#         error_msg = f"Error executing restart script: {str(e)}"
+#         if ctx:
+#             await ctx.error(error_msg)
+#         return f"Error restarting gNB: {error_msg}"
 
 @mcp.tool()
 async def update_gnb_mcs(
@@ -470,6 +470,94 @@ async def update_gnb_mcs(
         if ctx:
             await ctx.error(error_msg)
         return f"Error: {error_msg}"
+
+@mcp.tool()
+async def stop_gnb(ctx: Context = None) -> str:
+    """
+    Stops the currently running gNB server process.
+    
+    This tool executes a script that finds and stops any running gNB processes
+    using graceful termination (SIGTERM) first, then force kill (SIGKILL) if needed.
+
+    Returns:
+        Status message indicating whether the stop was successful
+    """
+    script_path = Path(__file__).parent / "scripts" / "stop_gnb_simple.sh"
+    
+    if not script_path.exists():
+        raise FileNotFoundError(f"Stop script not found: {script_path}")
+    
+    # Make sure the script is executable
+    script_path.chmod(0o755)
+    
+    try:
+        # Execute the stop script
+        process = await asyncio.create_subprocess_exec(
+            str(script_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            output = stdout.decode().strip()
+            await ctx.info(f"gNB stop successful: {output}")
+            return f"gNB process stopped successfully."
+        else:
+            error = stderr.decode().strip() if stderr else stdout.decode().strip()
+            await ctx.warning(f"gNB stop issue: {error}")
+            if process.returncode == 2:
+                return "gNB process could not be force killed."
+            else:
+                return f"Failed to stop gNB process: {error}"
+    except Exception as e:
+        await ctx.error(f"Error executing stop script: {str(e)}")
+        return f"Error stopping gNB process: {str(e)}"
+
+@mcp.tool()
+async def start_gnb(ctx: Context = None) -> str:
+    """
+    Starts the gNB server process.
+    
+    This tool executes a script that starts the gNB process with the current configuration.
+    The gNB will be started in the background with logging to a timestamped log file.
+
+    Returns:
+        Status message indicating whether the start was successful
+    """
+    script_path = Path(__file__).parent / "scripts" / "start_gnb_simple.sh"
+    
+    if not script_path.exists():
+        raise FileNotFoundError(f"Start script not found: {script_path}")
+    
+    # Make sure the script is executable
+    script_path.chmod(0o755)
+    
+    try:
+        # Execute the start script
+        process = await asyncio.create_subprocess_exec(
+            str(script_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            output = stdout.decode().strip()
+            await ctx.info(f"gNB start successful: {output}")
+            return f"gNB process started successfully."
+        else:
+            error = stderr.decode().strip() if stderr else stdout.decode().strip()
+            await ctx.warning(f"gNB start issue: {error}")
+            if process.returncode == 1:
+                return f"Failed to start gNB process: {error}"
+            else:
+                return f"gNB start error: {error}"
+    except Exception as e:
+        await ctx.error(f"Error executing start script: {str(e)}")
+        return f"Error starting gNB process: {str(e)}"
 
 if __name__ == "__main__":
     # Initialize and run the server

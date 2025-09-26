@@ -5,8 +5,8 @@
 
 set -e
 
-# Host paths and environment
-export GNB_BUILD_DIR="/home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/cmake_targets/ran_build/build"
+# Container paths (mapped from host via docker-compose volumes)
+export GNB_BUILD_DIR="/app/gnb-logs"
 export GNB_CONFIG_FILE="gnb.sa.band78.51prb.usrpb200.conf"
 export GNB_EXECUTABLE="./nr-softmodem"
 export GAIN_VALUE="3"
@@ -44,7 +44,7 @@ fi
 
 # Start gNB
 log_message "Starting gNB..."
-config_path="/home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/ci-scripts/conf_files/$GNB_CONFIG_FILE"
+config_path="$GNB_BUILD_DIR/$GNB_CONFIG_FILE"
 log_file="gnb_$(date +%F_%H%M%S).log"
 
 cmd="sudo $GNB_EXECUTABLE -O $config_path -g $GAIN_VALUE --usrp-tx-thread-config $USRP_TX_THREAD_CONFIG"

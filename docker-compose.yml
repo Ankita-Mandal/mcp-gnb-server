@@ -9,6 +9,9 @@ services:
     ports:
       - "8000:8000"
     privileged: true
+    pid: "host"  # Share host PID namespace for process management
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
     environment:
       # MCP Server Configuration
       - PORT=8000
@@ -31,6 +34,14 @@ services:
       - GAIN_VALUE=3
       - USRP_TX_THREAD_CONFIG=1
       - RESTART_TIMEOUT=30
+      
+      # # Library paths for OAI
+      # - LD_LIBRARY_PATH=/opt/oai/cmake_targets/ran_build/build:/opt/oai/openair2/COMMON:/opt/oai/lib:$LD_LIBRARY_PATH
+      # OAI Library Paths - Comprehensive library search paths
+      - LD_LIBRARY_PATH=/app/oai-root/cmake_targets/ran_build/build:/app/oai-cmake-targets/ran_build/build:/app/oai-cmake-targets/lte_build_oai/build:/app/oai-cmake-targets/basic_simulator/build:/app/oai-common/utils:/app/oai-targets/bin:/app/oai-executables:/app/gnb-logs:/usr/local/lib:/usr/lib/x86_64-linux-gnu:/usr/lib:/lib:/lib64
+      - OAI_ROOT_DIR=/app/oai-root
+      - OAI_CMAKE_TARGETS_DIR=/app/oai-cmake-targets
+      - OAI_COMMON_DIR=/app/oai-common
     volumes:
       # Mount the server.py file directly
       - ./server.py:/app/server.py
@@ -40,11 +51,36 @@ services:
       - ./logs:/app/logs
       # Mount the execute_on_host.sh script
       - ./scripts/execute_on_host.sh:/app/execute_on_host.sh
+
+      # Mount ALL OpenAirInterface directories that could contain libraries
+      # Base OAI directory (contains all source and build artifacts)
+      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g:/app/oai-root
+      
       # Mount the gNB log directory
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/cmake_targets/ran_build/build:/app/gnb-logs
       # Mount the actual OAI files from the workspace path
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/ci-scripts/conf_files:/app/oai-files
       - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/doc:/app/oai-docs
+      # All cmake build directories (where libraries are built)
+      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/cmake_targets:/app/oai-cmake-targets
+      
+      # Common library directories (contains shared libraries)
+      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/common:/app/oai-common
+      
+      # Targets directory (contains various build outputs)
+      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/targets:/app/oai-targets
+      
+      # OpenAirInterface executables directory
+      - /home/xmili/Documents/Abhiram/USRPworkarea/oai-setup/openairinterface5g/executables:/app/oai-executables
+      
+      # System libraries that might be needed
+      # - /usr/lib:/usr/lib:ro
+      # - /usr/local/lib:/usr/local/lib:ro
+      # - /lib:/lib:ro
+      # - /lib64:/lib64:ro
+      
       - /var/run/docker.sock:/var/run/docker.sock
+
     command: ["python", "server.py"]
+
     restart: unless-stopped
