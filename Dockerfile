@@ -45,6 +45,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy Python modules (needed for imports)
+COPY action_logger.py .
+COPY helper.py .
+
 # Configure sudo without password for root user
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     echo "Defaults !requiretty" >> /etc/sudoers

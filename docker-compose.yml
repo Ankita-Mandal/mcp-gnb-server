@@ -6,9 +6,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "8000:8000"
     privileged: true
+    network_mode: "host"
     pid: "host"  # Share host PID namespace for process management
     devices:
       - /dev/bus/usb:/dev/bus/usb
@@ -49,6 +50,8 @@ services:
       - ./scripts:/app/scripts
       # Mount logs directory for persistent action logs visible in codebase
       - ./logs:/app/logs
+      # Mount knowledge base directory for 3GPP documents
+      - ./knowledge_base:/app/knowledge_base
       # Mount the execute_on_host.sh script
       - ./scripts/execute_on_host.sh:/app/execute_on_host.sh
 
