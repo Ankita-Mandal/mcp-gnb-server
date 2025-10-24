@@ -61,6 +61,52 @@ ACTION_LOG_PATH = Path(os.environ.get("ACTION_LOG_PATH", str(DEFAULT_LOG_PATH)))
 action_logger = ActionLogger(ACTION_LOG_PATH)
 log_tool_calls = make_tool_logger(action_logger, SERVER_TYPE)
 
+#-----Prompts-----
+@mcp.prompt()
+def improve_network_quality() -> list:
+    """
+    Prompt to give workflow for improving network quality of the NR5G network for higher signal strength and better performance.
+    LLM should refer to OAI or 3GPP documentation for more details if required.
+
+    Returns:
+        A list containing messages to guide the LLM through the process.
+    """
+
+    prompt_text = (
+        f"To improve the network quality consider the following:\n\n"
+        f"1. Check current network status using get_ue_logs and get_gnb_logs to get a comprehensive overview of the network\n"
+        f"2. Adjust DL and UL MCS to higher values for high throughput\n"
+        f"3. Adjust transmission and reception power attenuation to lower values for high signal strength\n"
+        f"4. Ask for permission before calling restart_gnb to implement the updates\n"
+        f"5. Ask for permission before calling restarting the UE to reconnect it to the gnb\n"
+        f"6. Verify network improvement by checking logs using get_ue_logs and get_gnb_logs\n"
+    )
+    
+    return [{"role": "user", "content": {"type": "text", "text": prompt_text}}]
+
+@mcp.prompt()
+def save_energy_resources() -> list:
+    """
+    Prompt to give workflow for saving energy and resources in the NR5G network.
+    LLM should refer to OAI or 3GPP documentation for more details if required.
+
+    Returns:
+        A list containing messages to guide the LLM through the process.
+    """
+    
+    prompt_text = (
+        f"To save energy and resources of the network consider the following:\n\n"
+        f"1. Check current network status using get_ue_logs and get_gnb_logs to get a comprehensive overview of the network\n"
+        f"2. Adjust DL and UL MCS to lower values for low throughput\n"
+        f"3. Adjust transmission and reception power attenuation to higher values for low signal strength\n"
+        f"4. Ask for permission before calling restart_gnb to implement the updates\n"
+        f"5. Ask for permission before calling restarting the UE to reconnect it to the gnb\n"
+        f"6. Verify network improvement by checking logs using get_ue_logs and get_gnb_logs\n"
+    )
+    
+    return [{"role": "user", "content": {"type": "text", "text": prompt_text}}]
+
+#-----Tools-----
 @mcp.tool()
 @log_tool_calls
 async def update_gnb_bandwidth(
